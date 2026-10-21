@@ -151,7 +151,7 @@ export default function ExpressLayout({ children }: { children: ReactNode }) {
         {/* Logo */}
 
         <Link
-          href="/"
+          href="/express/customer"
           onClick={() => setMobileOpen(false)}
           className={`flex items-center gap-2 pb-4 mb-2 border-b border-[#1e1e1e] no-underline ${
             collapsed ? "justify-center" : ""
@@ -252,7 +252,7 @@ export default function ExpressLayout({ children }: { children: ReactNode }) {
           {/* <div className="flex items-center gap-1.5"> */}
 
           <Link
-            href="/"
+            href="/express/customer"
             onClick={() => setMobileOpen(false)}
             className="flex items-center gap-1.5"
           >
