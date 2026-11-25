@@ -38,6 +38,7 @@ export function proxy(req: NextRequest) {
   if (
     pathname.startsWith("/google/callback") ||
     pathname.startsWith("/auth/logistics/google") ||
+    pathname.startsWith("/auth/google") ||
     pathname.startsWith("/onboarding")
   ) {
     return NextResponse.next();

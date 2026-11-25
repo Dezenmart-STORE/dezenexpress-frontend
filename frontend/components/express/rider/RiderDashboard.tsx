@@ -37,8 +37,8 @@ export default function RiderDashboard() {
         riderApi.getTransactions(1, 3),
       ]);
       setWallet(walletRes.data);
-      setRequests(reqRes.data?.requests ?? []);
-      setTxns(txRes.data?.transactions ?? []);
+      setRequests(reqRes.data?.bookings ?? []);
+      setTxns(txRes.data?.items ?? []);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load dashboard");
     } finally {
@@ -94,23 +94,25 @@ export default function RiderDashboard() {
             <div className="w-36 h-9 bg-[#2a2a2a] rounded-lg animate-pulse mb-2" />
           ) : (
             <p className="font-[var(--font-syne)] font-bold text-3xl text-[#f0f0f0]">
-              ₦{(wallet?.available ?? 0).toLocaleString()}
+              ₦{(wallet?.balance ?? 0).toLocaleString()}
             </p>
           )}
           <p className="text-[11px] text-[#555] mt-0.5">
-            ₦{(wallet?.pending ?? 0).toLocaleString()} pending in escrow
+            ₦{(wallet?.totalWithdrawn ?? 0).toLocaleString()} withdrawn so far
           </p>
           <div className="flex items-center gap-4 mt-4">
             <div>
               <p className="text-[10px] text-[#555]">Total earned</p>
               <p className="text-[14px] font-semibold text-[#e0e0e0]">
-                ₦{(wallet?.total ?? 0).toLocaleString()}
+                ₦{(wallet?.totalEarned ?? 0).toLocaleString()}
               </p>
             </div>
             <div className="w-px h-8 bg-[#2a2a2a]" />
             <div>
-              <p className="text-[10px] text-[#555]">Your share</p>
-              <p className="text-[14px] font-semibold text-[#ff2d2d]">85%</p>
+              <p className="text-[10px] text-[#555]">Withdrawn</p>
+              <p className="text-[14px] font-semibold text-[#ff2d2d]">
+                ₦{(wallet?.totalWithdrawn ?? 0).toLocaleString()}
+              </p>
             </div>
           </div>
           <Link
@@ -134,14 +136,14 @@ export default function RiderDashboard() {
           },
           {
             label: "Completed",
-            value: txns.filter((t) => t.status === "settled").length,
+            value: txns.filter((t) => t.reason === "booking_earning").length,
             Icon: CheckCircleIcon,
             color: "text-green-400",
             bg: "bg-green-500/10",
           },
           {
-            label: "Pending",
-            value: txns.filter((t) => t.status === "pending").length,
+            label: "Withdrawals",
+            value: txns.filter((t) => t.reason === "withdrawal").length,
             Icon: WalletIcon,
             color: "text-amber-400",
             bg: "bg-amber-500/10",
@@ -187,7 +189,7 @@ export default function RiderDashboard() {
           </div>
           <div className="divide-y divide-[#1e1e1e]">
             {requests.map((req) => (
-              <div key={req._id} className="flex items-center gap-3 px-5 py-4">
+              <div key={req.id} className="flex items-center gap-3 px-5 py-4">
                 <div
                   className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0
                   ${req.type === "ride" ? "bg-[#ff2d2d]/10" : "bg-blue-500/10"}`}
@@ -208,9 +210,9 @@ export default function RiderDashboard() {
                 </div>
                 <div className="text-right shrink-0">
                   <p className="text-[14px] font-bold text-green-400">
-                    ₦{Math.round((req.fareAmount ?? 0) * 0.85).toLocaleString()}
+                    ₦{(req.fareAmount ?? 0).toLocaleString()}
                   </p>
-                  <p className="text-[10px] text-[#555]">your 85%</p>
+                  <p className="text-[10px] text-[#555]">fare</p>
                 </div>
               </div>
             ))}
@@ -234,25 +236,19 @@ export default function RiderDashboard() {
           </div>
           <div className="divide-y divide-[#1e1e1e]">
             {txns.map((t) => (
-              <div key={t._id} className="flex items-center gap-3 px-5 py-3.5">
+              <div key={t.id} className="flex items-center gap-3 px-5 py-3.5">
                 <div
                   className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0
-                  ${t.status === "settled" ? "bg-green-500/10" : t.status === "withdrawn" ? "bg-[#222]" : "bg-amber-500/10"}`}
+                  ${t.type === "credit" ? "bg-green-500/10" : "bg-[#222]"}`}
                 >
                   <TruckIcon
                     size={15}
-                    color={
-                      t.status === "settled"
-                        ? "#22c55e"
-                        : t.status === "withdrawn"
-                          ? "#666"
-                          : "#f59e0b"
-                    }
+                    color={t.type === "credit" ? "#22c55e" : "#666"}
                   />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-[13px] font-medium text-[#e0e0e0] truncate">
-                    {t.description}
+                    {t.description ?? t.reason.replace(/_/g, " ")}
                   </p>
                   <p className="text-[11px] text-[#555]">
                     {formatDate(t.createdAt)}

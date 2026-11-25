@@ -1,71 +1,94 @@
 "use client";
 
-import { RequestStatus, ServiceType } from "@/lib/express/types";
 import { CheckCircleIcon } from "@/components/Icons";
 
-const RIDE_STEPS: { status: RequestStatus; label: string }[] = [
-  { status: "accepted", label: "Rider accepted" },
-  { status: "payment_confirmed", label: "Payment confirmed" },
-  { status: "arrived", label: "Rider arrived" },
-  { status: "trip_started", label: "Trip started" },
-  { status: "trip_completed", label: "Trip completed" },
-];
+// Backend booking statuses:
+//   DELIVERY: pending (customer pays) → accepted → arrived_at_pickup (optional) → in_progress
+//             → arrived_at_dropoff (optional) → completed
+//   RIDE:     pending (rider confirms) → rider_accepted (customer pays) → accepted → …same
+//   either:   cancelled
+// plus paymentStatus: unpaid | pending | paid
 
-const DELIVERY_STEPS: { status: RequestStatus; label: string }[] = [
-  { status: "accepted", label: "Rider accepted" },
-  { status: "payment_confirmed", label: "Payment confirmed" },
-  { status: "arrived", label: "Arrived at pickup" },
-  { status: "picked_up", label: "Package picked up" },
-  { status: "in_transit", label: "In transit" },
-  { status: "delivered", label: "Delivered" },
-];
-
-const STATUS_ORDER: RequestStatus[] = [
-  "requested",
-  "riders_displayed",
-  "selected",
+const AFTER_ACCEPT = [
   "accepted",
-  "payment_confirmed",
-  "arrived",
-  "picked_up",
-  "in_transit",
-  "trip_started",
-  "trip_completed",
-  "delivered",
+  "arrived_at_pickup",
+  "in_progress",
+  "arrived_at_dropoff",
   "completed",
 ];
-
-function getStepIndex(status: RequestStatus): number {
-  return STATUS_ORDER.indexOf(status);
-}
+const AFTER_PICKUP_ARRIVAL = [
+  "arrived_at_pickup",
+  "in_progress",
+  "arrived_at_dropoff",
+  "completed",
+];
+const AFTER_START = ["in_progress", "arrived_at_dropoff", "completed"];
+const AFTER_DROPOFF_ARRIVAL = ["arrived_at_dropoff", "completed"];
 
 export default function StatusTracker({
   status,
+  paymentStatus,
   type,
 }: {
-  status: RequestStatus;
-  type: ServiceType;
+  status: string;
+  /** Omit on the rider side, where payment is always already confirmed. */
+  paymentStatus?: string;
+  type: "ride" | "delivery" | string;
 }) {
-  const steps = type === "ride" ? RIDE_STEPS : DELIVERY_STEPS;
-  const currentIdx = getStepIndex(status);
+  const isRide = type === "ride";
+  const paid = paymentStatus === undefined ? true : paymentStatus === "paid";
+
+  const tail = [
+    {
+      label: isRide ? "Rider at pickup" : "Arrived at pickup",
+      done: AFTER_PICKUP_ARRIVAL.includes(status),
+    },
+    {
+      label: isRide ? "Trip started" : "Package picked up",
+      done: AFTER_START.includes(status),
+    },
+    {
+      label: isRide ? "Arrived at destination" : "Arrived at drop-off",
+      done: AFTER_DROPOFF_ARRIVAL.includes(status),
+    },
+    {
+      label: isRide ? "Trip complete" : "Delivered",
+      done: status === "completed",
+    },
+  ];
+
+  const steps: { label: string; done: boolean }[] = isRide
+    ? [
+        { label: "Ride requested", done: true },
+        {
+          label: "Rider confirmed",
+          done: status === "rider_accepted" || AFTER_ACCEPT.includes(status),
+        },
+        { label: "Payment confirmed", done: paid },
+        ...tail,
+      ]
+    : [
+        { label: "Booking placed", done: true },
+        { label: "Payment confirmed", done: paid },
+        { label: "Rider accepted", done: AFTER_ACCEPT.includes(status) },
+        ...tail,
+      ];
+
+  const firstPending = steps.findIndex((s) => !s.done);
 
   return (
     <div className="flex flex-col gap-0">
       {steps.map((step, i) => {
-        const stepIdx = getStepIndex(step.status);
-        const done = stepIdx <= currentIdx;
-        const active = stepIdx === currentIdx;
+        const active = i === firstPending;
         const isLast = i === steps.length - 1;
-
         return (
-          <div key={step.status} className="flex items-start gap-3">
-            {/* Line + dot */}
+          <div key={step.label} className="flex items-start gap-3">
             <div className="flex flex-col items-center">
               <div
                 className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 border-2 transition-all
-                ${done ? "bg-[#ff2d2d] border-[#ff2d2d]" : "bg-transparent border-[#2a2a2a]"}`}
+                ${step.done ? "bg-[#ff2d2d] border-[#ff2d2d]" : "bg-transparent border-[#2a2a2a]"}`}
               >
-                {done ? (
+                {step.done ? (
                   <CheckCircleIcon size={14} color="white" />
                 ) : (
                   <div
@@ -75,21 +98,18 @@ export default function StatusTracker({
               </div>
               {!isLast && (
                 <div
-                  className={`w-0.5 h-8 mt-1 ${done ? "bg-[#ff2d2d]/40" : "bg-[#1e1e1e]"}`}
+                  className={`w-0.5 h-8 mt-1 ${step.done ? "bg-[#ff2d2d]/40" : "bg-[#1e1e1e]"}`}
                 />
               )}
             </div>
-            {/* Label */}
             <div className="pt-1 pb-8">
               <p
-                className={`text-[13px] font-medium ${done ? "text-[#e0e0e0]" : "text-[#555]"}`}
+                className={`text-[13px] font-medium ${step.done ? "text-[#e0e0e0]" : "text-[#555]"}`}
               >
                 {step.label}
               </p>
               {active && (
-                <p className="text-[11px] text-[#ff2d2d] mt-0.5">
-                  Current status
-                </p>
+                <p className="text-[11px] text-[#ff2d2d] mt-0.5">Up next</p>
               )}
             </div>
           </div>

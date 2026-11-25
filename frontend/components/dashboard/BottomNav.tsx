@@ -27,12 +27,12 @@ const moreItems = [
   { href: "/admin", label: "Admin", Icon: ShieldIcon },
   {
     href: "/express/customer/book-ride",
-    label: "Order a Ride",
+    label: "Book a Ride",
     Icon: TruckIcon,
   },
   {
     href: "/express/customer/book-delivery",
-    label: "Pick Up & Delivery",
+    label: "Delivery",
     Icon: MapPinIcon,
   },
 ];
@@ -74,13 +74,17 @@ function MoreDrawer({ onClose }: { onClose: () => void }) {
                       : "bg-[#111] border border-[#2a2a2a] hover:border-[#333]"
                   }`}
               >
-                <Icon size={18} color={active ? "#ff2d2d" : "#666"} />
+                <span className="shrink-0">
+                  <Icon size={18} color={active ? "#ff2d2d" : "#666"} />
+                </span>
                 <span
-                  className={`text-[13px] font-medium ${active ? "text-[#ff2d2d]" : "text-[#aaa]"}`}
+                  className={`min-w-0 flex-1 truncate text-[13px] font-medium ${active ? "text-[#ff2d2d]" : "text-[#aaa]"}`}
                 >
                   {label}
                 </span>
-                <ChevronRightIcon size={14} color="#333" className="ml-auto" />
+                <span className="shrink-0">
+                  <ChevronRightIcon size={14} color="#333" />
+                </span>
               </Link>
             );
           })}

@@ -1,195 +1,142 @@
 "use client";
 
-import { useState } from "react";
-import { MOCK_RIDERS, VEHICLE_TYPES, VehicleType } from "@/lib/express/types";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { expressBookingApi } from "@/lib/express/api";
-import RiderCard from "../shared/RiderCard";
+import { useCustomerProfile } from "@/lib/hooks/useCustomerProfile";
+import BankTransferPayment from "./BankTransferPayment";
 import MapPlaceholder from "../shared/MapPlaceholder";
-import ETADisplay from "../shared/ETADisplay";
-import {
-  MapPinIcon,
-  AlertTriangleIcon,
-  CheckCircleIcon,
-} from "@/components/Icons";
+import { MapPinIcon, AlertTriangleIcon } from "@/components/Icons";
 
-type Step = "details" | "riders" | "customer" | "payment" | "confirmed";
+type Step = "package" | "people" | "payment";
+type Size = "small" | "medium" | "large";
 
-const PACKAGE_SIZES = [
+const PACKAGE_SIZES: {
+  value: Size;
+  label: string;
+  desc: string;
+  icon: string;
+}[] = [
   {
     value: "small",
     label: "Small",
-    desc: "Envelope, phone, documents",
+    desc: "Documents, phone, small items",
     icon: "📄",
-    maxKg: "1kg",
-    vehicles: ["bicycle", "motorcycle", "tricycle", "car", "van", "truck"],
   },
   {
     value: "medium",
     label: "Medium",
     desc: "Shoes, clothes, small box",
     icon: "📦",
-    maxKg: "5kg",
-    vehicles: ["motorcycle", "tricycle", "car", "van", "truck"],
   },
-  {
-    value: "large",
-    label: "Large",
-    desc: "Large box, appliance",
-    icon: "🗃",
-    maxKg: "20kg",
-    vehicles: ["car", "van", "truck"],
-  },
-  {
-    value: "bulky",
-    label: "Bulky",
-    desc: "Furniture, heavy goods",
-    icon: "🏗",
-    maxKg: "50kg+",
-    vehicles: ["van", "truck"],
-  },
+  { value: "large", label: "Large", desc: "Large box, appliance", icon: "🗃" },
 ];
 
 function formatNGN(n: number) {
   return `₦${n.toLocaleString("en-NG")}`;
 }
 
+const inputCls =
+  "w-full bg-[#1a1a1a] border border-[#222] rounded-xl px-4 py-3 text-[13px] text-[#e0e0e0] focus:border-[#ff2d2d] focus:outline-none placeholder:text-[#444]";
+const labelCls =
+  "text-[11px] text-[#aaa] font-medium uppercase tracking-wider mb-1.5";
+
 export default function BookDelivery() {
-  const [step, setStep] = useState<Step>("details");
+  const router = useRouter();
+  const profile = useCustomerProfile();
+
+  const [step, setStep] = useState<Step>("package");
   const [pickup, setPickup] = useState("");
   const [destination, setDestination] = useState("");
-  const [packageSize, setPackageSize] = useState("");
+  const [packageSize, setPackageSize] = useState<Size | "">("");
   const [description, setDescription] = useState("");
-  const [instructions, setInstructions] = useState("");
-  const [selectedVehicle, setSelectedVehicle] = useState<VehicleType | "">("");
-  const [selectedRider, setSelectedRider] = useState<string | null>(null);
+  const [weightKg, setWeightKg] = useState("");
+  const [fareAmount, setFareAmount] = useState("");
+  const [notes, setNotes] = useState("");
 
-  // Sender — phone only (no email needed)
   const [senderName, setSenderName] = useState("");
   const [senderPhone, setSenderPhone] = useState("");
   const [recipientName, setRecipientName] = useState("");
   const [recipientPhone, setRecipientPhone] = useState("");
+  const [recipientEmail, setRecipientEmail] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bookingRef, setBookingRef] = useState("");
-  const [pickupOtp, setPickupOtp] = useState("");
-  const [deliveryOtp, setDeliveryOtp] = useState("");
 
-  // ── Rider filtering: by package size AND selected vehicle type ──────────────
-  const allowedVehicles =
-    PACKAGE_SIZES.find((s) => s.value === packageSize)?.vehicles ?? [];
+  useEffect(() => {
+    setSenderName((v) => v || profile.name || "");
+    setSenderPhone((v) => v || profile.phoneNumber || "");
+  }, [profile]);
 
-  const availableRiders = MOCK_RIDERS.filter((r) => {
-    if (!r.isAvailable) return false;
-    if (!r.operatingRules.serviceTypes.includes("delivery")) return false;
-    if (!allowedVehicles.includes(r.vehicleType)) return false;
-    if (selectedVehicle && r.vehicleType !== selectedVehicle) return false;
-    return true;
-  });
-
-  const rider = availableRiders.find((r) => r.id === selectedRider);
-
-  // Vehicles valid for selected package
-  const validVehicles = VEHICLE_TYPES.filter((v) =>
-    allowedVehicles.includes(v.value),
-  );
-
-  const validateCustomer = () => {
-    if (!senderName.trim()) return (setError("Enter sender name"), false);
-    if (!senderPhone.trim())
-      return (setError("Enter sender phone number"), false);
-    if (!recipientName.trim()) return (setError("Enter recipient name"), false);
-    if (!recipientPhone.trim())
-      return (setError("Enter recipient phone"), false);
+  const validatePackage = () => {
+    if (!pickup.trim() || !destination.trim())
+      return (setError("Enter the pickup and delivery addresses"), false);
+    if (!packageSize) return (setError("Choose a package size"), false);
+    if (!description.trim())
+      return (setError("Describe what you're sending"), false);
+    const fare = Number(fareAmount);
+    if (!fareAmount || Number.isNaN(fare) || fare <= 0)
+      return (setError("Enter a valid fare amount"), false);
+    if (weightKg && (Number.isNaN(Number(weightKg)) || Number(weightKg) <= 0))
+      return (setError("Weight must be a positive number"), false);
     setError(null);
     return true;
   };
 
-  const handlePay = async () => {
-    if (!validateCustomer()) return;
+  const validatePeople = () => {
+    if (!senderPhone.trim())
+      return (setError("Enter your phone number"), false);
+    if (!recipientName.trim())
+      return (setError("Enter the recipient's name"), false);
+    if (!recipientPhone.trim())
+      return (setError("Enter the recipient's phone"), false);
+    if (recipientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail))
+      return (
+        setError("Enter a valid recipient email or leave it blank"),
+        false
+      );
+    setError(null);
+    return true;
+  };
+
+  const handleContinue = async () => {
+    if (!validatePeople() || !packageSize) return;
     setLoading(true);
     setError(null);
     try {
-      const bookRes = await expressBookingApi.bookDelivery({
-        customerName: senderName,
-        customerEmail: `${senderPhone}@dezenexpress.com`,
-        customerPhone: senderPhone,
-        pickupAddress: { address: pickup },
-        dropoffAddress: { address: destination },
+      const res = await expressBookingApi.bookDelivery({
+        customerName: senderName.trim() || undefined,
+        customerPhone: senderPhone.trim(),
+        pickupAddress: { address: pickup.trim() },
+        dropoffAddress: { address: destination.trim() },
+        fareAmount: Number(fareAmount),
         package: {
-          description: description || "Package",
-          sizeCategory: packageSize as "small" | "medium" | "large" | "bulky",
+          description: description.trim(),
+          sizeCategory: packageSize,
+          weightKg: weightKg ? Number(weightKg) : undefined,
         },
-        recipientName,
-        recipientPhone,
-        fareAmount: rider!.priceEstimate!,
-        notes: instructions,
+        recipientName: recipientName.trim(),
+        recipientPhone: recipientPhone.trim(),
+        recipientEmail: recipientEmail.trim() || undefined,
+        notes: notes.trim() || undefined,
       });
-
-      const ref = bookRes.data?.bookingRef;
+      const ref = res.data?.bookingRef;
       if (!ref) throw new Error("Booking failed — no reference returned");
-
-      const payRes = await fetch("/api/express/payments/initiate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bookingRef: ref,
-          amount: rider!.priceEstimate!,
-          customerName: senderName,
-          customerEmail: `${senderPhone}@dezenexpress.com`,
-          customerPhone: senderPhone,
-          riderName: rider!.name,
-          riderEmail: "rider@dezenexpress.com",
-          riderPhone: "+2340000000000",
-          description: `Delivery: ${pickup} → ${destination} — ${ref}`,
-        }),
-      });
-
-      const payData = await payRes.json();
-      if (!payRes.ok)
-        throw new Error(payData.error ?? "Payment initiation failed");
-
-      if (payData.paymentUrl) {
-        window.open(payData.paymentUrl, "_blank");
-        setBookingRef(ref);
-        setPickupOtp(Math.floor(1000 + Math.random() * 9000).toString());
-        setDeliveryOtp(Math.floor(1000 + Math.random() * 9000).toString());
-        setStep("confirmed");
-      } else {
-        throw new Error("No payment URL returned");
-      }
+      setBookingRef(ref);
+      setStep("payment");
     } catch (err: unknown) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Payment failed. Please try again.",
-      );
+      setError(err instanceof Error ? err.message : "Could not create booking");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCancel = async () => {
-    if (!bookingRef) return;
-    if (
-      !confirm(
-        "Cancel this delivery? A refund will be processed if the rider hasn't picked up yet.",
-      )
-    )
-      return;
-    try {
-      await expressBookingApi.cancelOrder(bookingRef, "Customer cancelled");
-      alert("Delivery cancelled. Refund will be processed within 24 hours.");
-    } catch (err: unknown) {
-      alert(
-        err instanceof Error
-          ? err.message
-          : "Could not cancel — contact support",
-      );
-    }
-  };
+  const goToTracking = (ref: string) =>
+    router.push(`/express/customer/track?booking=${encodeURIComponent(ref)}`);
 
-  const stepLabels: Step[] = ["details", "riders", "customer", "payment"];
+  const stepOrder: Step[] = ["package", "people", "payment"];
+  const stepLabels = ["Package", "People", "Pay"];
 
   return (
     <div className="flex-1 overflow-y-auto px-4 lg:px-7 py-4 lg:py-6 flex flex-col gap-5">
@@ -198,17 +145,14 @@ export default function BookDelivery() {
           Send a Package
         </h1>
         <p className="text-[12px] text-[#555]">
-          No account needed — fast, tracked delivery across the city
+          Pay by bank transfer — a rider collects your package once it's paid
         </p>
       </div>
 
-      {/* Step indicator */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-        {stepLabels.map((s, i) => {
-          const current = stepLabels.indexOf(step);
-          const done = i < current;
+      <div className="flex items-center gap-1.5">
+        {stepOrder.map((s, i) => {
+          const done = i < stepOrder.indexOf(step);
           const active = s === step;
-          const labels = ["Package", "Rider", "People", "Pay"];
           return (
             <div key={s} className="flex items-center gap-1.5 shrink-0">
               <div
@@ -218,11 +162,11 @@ export default function BookDelivery() {
                 {done ? "✓" : i + 1}
               </div>
               <span
-                className={`text-[11px] hidden sm:block shrink-0 ${active ? "text-[#e0e0e0]" : "text-[#444]"}`}
+                className={`text-[11px] ${active ? "text-[#e0e0e0]" : "text-[#444]"}`}
               >
-                {labels[i]}
+                {stepLabels[i]}
               </span>
-              {i < 3 && <div className="w-4 h-px bg-[#2a2a2a] shrink-0" />}
+              {i < 2 && <div className="w-4 h-px bg-[#2a2a2a] shrink-0" />}
             </div>
           );
         })}
@@ -235,15 +179,14 @@ export default function BookDelivery() {
         </div>
       )}
 
-      {/* ── Step 1: Package details ─────────────────────────────────────────── */}
-      {step === "details" && (
+      {/* Step 1: package */}
+      {step === "package" && (
         <div className="flex flex-col gap-4">
           <MapPlaceholder
             pickup={pickup || "Pickup"}
-            destination={destination || "Destination"}
+            destination={destination || "Delivery"}
             height="h-40"
           />
-
           <div className="flex flex-col gap-3">
             <div className="relative">
               <div className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-green-400" />
@@ -251,7 +194,7 @@ export default function BookDelivery() {
                 value={pickup}
                 onChange={(e) => setPickup(e.target.value)}
                 placeholder="Pickup address..."
-                className="w-full bg-[#1a1a1a] border border-[#222] rounded-xl pl-9 pr-4 py-3 text-[13px] text-[#e0e0e0] focus:border-[#ff2d2d] focus:outline-none placeholder:text-[#444]"
+                className={`${inputCls} pl-9`}
               />
             </div>
             <div className="relative">
@@ -264,563 +207,198 @@ export default function BookDelivery() {
                 value={destination}
                 onChange={(e) => setDestination(e.target.value)}
                 placeholder="Delivery address..."
-                className="w-full bg-[#1a1a1a] border border-[#222] rounded-xl pl-9 pr-4 py-3 text-[13px] text-[#e0e0e0] focus:border-[#ff2d2d] focus:outline-none placeholder:text-[#444]"
+                className={`${inputCls} pl-9`}
               />
             </div>
           </div>
 
-          {/* Package size */}
           <div>
-            <p className="text-[12px] font-semibold text-[#aaa] mb-2">
-              Package Size
-            </p>
-            <div className="grid grid-cols-2 gap-2">
+            <p className={labelCls}>Package size</p>
+            <div className="grid grid-cols-3 gap-2">
               {PACKAGE_SIZES.map((s) => (
                 <button
                   key={s.value}
-                  onClick={() => {
-                    setPackageSize(s.value);
-                    setSelectedVehicle("");
-                    setSelectedRider(null);
-                  }}
-                  className={`flex items-start gap-2.5 p-3 rounded-xl border text-left cursor-pointer transition-all
+                  onClick={() => setPackageSize(s.value)}
+                  className={`flex flex-col items-center gap-1 p-3 rounded-xl border text-center cursor-pointer transition-all
                     ${packageSize === s.value ? "border-[#ff2d2d] bg-[#ff2d2d]/5" : "border-[#222] bg-[#1a1a1a] hover:border-[#333]"}`}
                 >
-                  <span className="text-xl shrink-0">{s.icon}</span>
-                  <div className="min-w-0">
-                    <p className="text-[12px] font-semibold text-[#e0e0e0]">
-                      {s.label}
-                    </p>
-                    <p className="text-[10px] text-[#555]">{s.desc}</p>
-                    <p className="text-[10px] text-[#444]">Up to {s.maxKg}</p>
-                  </div>
+                  <span className="text-xl">{s.icon}</span>
+                  <p className="text-[12px] font-semibold text-[#e0e0e0]">
+                    {s.label}
+                  </p>
+                  <p className="text-[10px] text-[#555]">{s.desc}</p>
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Vehicle type filter — only shows vehicles valid for package */}
-          {packageSize && (
-            <div>
-              <p className="text-[12px] font-semibold text-[#aaa] mb-2">
-                Preferred Vehicle{" "}
-                <span className="text-[#555] font-normal">(optional)</span>
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => setSelectedVehicle("")}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-[12px] cursor-pointer transition-all
-                    ${selectedVehicle === "" ? "bg-[#ff2d2d]/10 border-[#ff2d2d]/40 text-[#ff2d2d]" : "bg-[#1a1a1a] border-[#222] text-[#666] hover:border-[#333]"}`}
-                >
-                  All
-                </button>
-                {validVehicles.map((v) => (
-                  <button
-                    key={v.value}
-                    onClick={() => setSelectedVehicle(v.value as VehicleType)}
-                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-[12px] cursor-pointer transition-all
-                      ${selectedVehicle === v.value ? "bg-[#ff2d2d]/10 border-[#ff2d2d]/40 text-[#ff2d2d]" : "bg-[#1a1a1a] border-[#222] text-[#666] hover:border-[#333]"}`}
-                  >
-                    {v.icon} {v.label}
-                  </button>
-                ))}
-              </div>
-              <p className="text-[10px] text-[#444] mt-1.5">
-                {packageSize === "large"
-                  ? "Large packages need a car, van or truck"
-                  : packageSize === "bulky"
-                    ? "Bulky packages require a van or truck"
-                    : "All vehicle types available for this package size"}
-              </p>
-            </div>
-          )}
-
           <div>
-            <p className="text-[11px] text-[#aaa] font-medium uppercase tracking-wider mb-1.5">
-              Package Description (optional)
-            </p>
+            <p className={labelCls}>What are you sending?</p>
             <input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="e.g. Clothes and shoes"
-              className="w-full bg-[#1a1a1a] border border-[#222] rounded-xl px-4 py-2.5 text-[13px] text-[#e0e0e0] focus:border-[#ff2d2d] focus:outline-none placeholder:text-[#444]"
+              placeholder="e.g. Signed contract documents"
+              className={inputCls}
             />
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className={labelCls}>Weight in kg (optional)</p>
+              <input
+                type="number"
+                min={0}
+                step="0.1"
+                value={weightKg}
+                onChange={(e) => setWeightKg(e.target.value)}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <p className={labelCls}>Fare (₦)</p>
+              <input
+                type="number"
+                min={1}
+                value={fareAmount}
+                onChange={(e) => setFareAmount(e.target.value)}
+                placeholder="e.g. 3500"
+                className={inputCls}
+              />
+            </div>
+          </div>
+          <p className="text-[10px] text-[#444] -mt-2">
+            You set the fare for now. Riders see it when they review your
+            request, and you pay exactly this amount.
+          </p>
+
           <div>
-            <p className="text-[11px] text-[#aaa] font-medium uppercase tracking-wider mb-1.5">
-              Special Instructions (optional)
-            </p>
+            <p className={labelCls}>Notes for the rider (optional)</p>
             <textarea
-              value={instructions}
-              onChange={(e) => setInstructions(e.target.value)}
-              placeholder="e.g. Fragile, handle with care"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
               rows={2}
-              className="w-full bg-[#1a1a1a] border border-[#222] rounded-xl px-4 py-2.5 text-[13px] text-[#e0e0e0] focus:border-[#ff2d2d] focus:outline-none placeholder:text-[#444] resize-none"
+              className={`${inputCls} resize-none`}
+              placeholder="e.g. Call the recipient on arrival"
             />
           </div>
 
           <button
-            onClick={() => {
-              setError(null);
-              if (!pickup || !destination || !packageSize)
-                return setError("Fill in all required fields");
-              setStep("riders");
-            }}
+            onClick={() => validatePackage() && setStep("people")}
             className="w-full py-3 bg-[#ff2d2d] text-white rounded-xl text-[14px] font-semibold font-[var(--font-syne)] border-none cursor-pointer hover:opacity-90"
           >
-            Find Riders →
+            Continue →
           </button>
         </div>
       )}
 
-      {/* ── Step 2: Select rider ─────────────────────────────────────────────── */}
-      {step === "riders" && (
+      {/* Step 2: sender + recipient */}
+      {step === "people" && (
         <div className="flex flex-col gap-4">
-          <div className="bg-[#1a1a1a] border border-[#222] rounded-xl px-4 py-3 flex items-center gap-3">
-            <div className="text-xl">
-              {PACKAGE_SIZES.find((s) => s.value === packageSize)?.icon}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[12px] text-[#aaa] truncate">
-                {pickup} → {destination}
-              </p>
-              <p className="text-[11px] text-[#555]">
-                {PACKAGE_SIZES.find((s) => s.value === packageSize)?.label}{" "}
-                package
-                {selectedVehicle
-                  ? ` · ${VEHICLE_TYPES.find((v) => v.value === selectedVehicle)?.label} preferred`
-                  : ""}
-              </p>
-            </div>
-            <button
-              onClick={() => setStep("details")}
-              className="text-[11px] text-[#ff2d2d] bg-transparent border-none cursor-pointer shrink-0"
-            >
-              Edit
-            </button>
-          </div>
-
-          {availableRiders.length === 0 ? (
-            <div className="flex flex-col items-center py-10 gap-3 bg-[#1a1a1a] border border-[#222] rounded-2xl">
-              <p className="text-[14px] font-medium text-[#777]">
-                No riders available
-              </p>
-              <p className="text-[12px] text-[#555] text-center max-w-xs">
-                No{" "}
-                {selectedVehicle
-                  ? VEHICLE_TYPES.find((v) => v.value === selectedVehicle)
-                      ?.label
-                  : ""}{" "}
-                riders available for a {packageSize} package right now
-              </p>
-              <button
-                onClick={() => {
-                  setSelectedVehicle("");
-                }}
-                className="text-[12px] text-[#ff2d2d] bg-transparent border-none cursor-pointer"
-              >
-                Clear vehicle filter
-              </button>
-            </div>
-          ) : (
-            <>
-              <p className="text-[12px] text-[#555]">
-                {availableRiders.length} rider
-                {availableRiders.length !== 1 ? "s" : ""} available for your
-                package
-              </p>
-              <div className="flex flex-col gap-3">
-                {availableRiders.map((r) => (
-                  <div key={r.id}>
-                    <RiderCard
-                      rider={r}
-                      selected={selectedRider === r.id}
-                      onSelect={() =>
-                        setSelectedRider(r.id === selectedRider ? null : r.id)
-                      }
-                      showActions={false}
-                    />
-                    {/* Call rider button — confirm availability before paying */}
-                    {selectedRider === r.id && (
-                      <div className="mt-2 flex items-center gap-2 px-3 py-2.5 bg-[#111] border border-[#2a2a2a] rounded-xl">
-                        <svg
-                          width="13"
-                          height="13"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="#f59e0b"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8 19.79 19.79 0 01.22 1.18 2 2 0 012.18 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 7.91a16 16 0 006.29 6.29l1.28-1.28a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z" />
-                        </svg>
-                        <p className="text-[11px] text-amber-400 flex-1">
-                          Confirm availability with rider before paying — escrow
-                          cancellation may attract a fee
-                        </p>
-                        <a
-                          href={`tel:+2340000000000`}
-                          className="px-3 py-1 bg-green-500/10 border border-green-500/30 text-green-400 rounded-lg text-[11px] font-semibold no-underline hover:bg-green-500/20 transition-colors shrink-0"
-                        >
-                          Call Rider
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-          <div className="flex gap-3">
-            <button
-              onClick={() => setStep("details")}
-              className="flex-1 py-2.5 bg-transparent border border-[#222] text-[#666] rounded-xl text-[13px] cursor-pointer hover:border-[#333]"
-            >
-              ← Back
-            </button>
-            <button
-              onClick={() => setStep("customer")}
-              disabled={!selectedRider}
-              className="flex-[2] py-2.5 bg-[#ff2d2d] text-white rounded-xl text-[13px] font-semibold font-[var(--font-syne)] border-none cursor-pointer hover:opacity-90 disabled:opacity-30"
-            >
-              Continue →
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Step 3: Sender + Recipient (phone only) ──────────────────────────── */}
-      {step === "customer" && (
-        <div className="flex flex-col gap-4">
-          <div className="flex items-start gap-2 px-3 py-2.5 bg-[#111] border border-[#2a2a2a] rounded-xl">
-            <CheckCircleIcon
-              size={14}
-              color="#22c55e"
-              className="shrink-0 mt-0.5"
-            />
-            <p className="text-[12px] text-[#555]">
-              No account needed. Use your phone number to track this delivery
-              later.
-            </p>
-          </div>
-
-          {/* Sender */}
           <div className="bg-[#1a1a1a] border border-[#222] rounded-2xl p-4 flex flex-col gap-3">
             <p className="text-[12px] font-semibold text-[#aaa]">
-              Sender (You)
+              Sender (you)
             </p>
             <input
-              type="text"
               value={senderName}
               onChange={(e) => setSenderName(e.target.value)}
               placeholder="Your full name"
-              className="w-full bg-[#111] border border-[#2e2e2e] rounded-xl px-4 py-2.5 text-[13px] text-[#e0e0e0] focus:border-[#ff2d2d] focus:outline-none placeholder:text-[#444]"
+              className={inputCls}
             />
             <input
               type="tel"
               value={senderPhone}
               onChange={(e) => setSenderPhone(e.target.value)}
-              placeholder="Phone number (e.g. 08012345678)"
-              className="w-full bg-[#111] border border-[#2e2e2e] rounded-xl px-4 py-2.5 text-[13px] text-[#e0e0e0] focus:border-[#ff2d2d] focus:outline-none placeholder:text-[#444]"
+              placeholder="Your phone (+2348012345678)"
+              className={inputCls}
             />
+            {profile.email && (
+              <p className="text-[10px] text-[#444]">
+                Receipts and the completion code go to {profile.email}.
+              </p>
+            )}
           </div>
 
-          {/* Recipient */}
           <div className="bg-[#1a1a1a] border border-[#222] rounded-2xl p-4 flex flex-col gap-3">
             <p className="text-[12px] font-semibold text-[#aaa]">Recipient</p>
             <input
-              type="text"
               value={recipientName}
               onChange={(e) => setRecipientName(e.target.value)}
               placeholder="Recipient full name"
-              className="w-full bg-[#111] border border-[#2e2e2e] rounded-xl px-4 py-2.5 text-[13px] text-[#e0e0e0] focus:border-[#ff2d2d] focus:outline-none placeholder:text-[#444]"
+              className={inputCls}
             />
             <input
               type="tel"
               value={recipientPhone}
               onChange={(e) => setRecipientPhone(e.target.value)}
-              placeholder="Recipient phone number"
-              className="w-full bg-[#111] border border-[#2e2e2e] rounded-xl px-4 py-2.5 text-[13px] text-[#e0e0e0] focus:border-[#ff2d2d] focus:outline-none placeholder:text-[#444]"
+              placeholder="Recipient phone"
+              className={inputCls}
             />
+            <input
+              type="email"
+              value={recipientEmail}
+              onChange={(e) => setRecipientEmail(e.target.value)}
+              placeholder="Recipient email (optional)"
+              className={inputCls}
+            />
+            <p className="text-[10px] text-[#444]">
+              If you add the recipient's email, the completion code is sent to
+              them too, so they can give it to the rider on delivery.
+            </p>
           </div>
 
           <div className="flex gap-3">
             <button
-              onClick={() => setStep("riders")}
+              onClick={() => setStep("package")}
               className="flex-1 py-2.5 bg-transparent border border-[#222] text-[#666] rounded-xl text-[13px] cursor-pointer hover:border-[#333]"
             >
               ← Back
             </button>
             <button
-              onClick={() => {
-                if (validateCustomer()) setStep("payment");
-              }}
-              className="flex-[2] py-2.5 bg-[#ff2d2d] text-white rounded-xl text-[13px] font-semibold font-[var(--font-syne)] border-none cursor-pointer hover:opacity-90"
+              onClick={handleContinue}
+              disabled={loading}
+              className="flex-[2] py-2.5 bg-[#ff2d2d] text-white rounded-xl text-[13px] font-semibold font-[var(--font-syne)] border-none cursor-pointer hover:opacity-90 disabled:opacity-30"
             >
-              Review & Pay →
+              {loading ? "Creating booking..." : "Continue to payment →"}
             </button>
           </div>
         </div>
       )}
 
-      {/* ── Step 4: Payment summary ──────────────────────────────────────────── */}
-      {step === "payment" && rider && (
+      {/* Step 3: pay by bank transfer */}
+      {step === "payment" && bookingRef && (
         <div className="flex flex-col gap-4">
           <div className="bg-[#1a1a1a] border border-[#222] rounded-2xl divide-y divide-[#1e1e1e]">
-            <div className="px-5 py-3.5">
-              <p className="text-[11px] text-[#aaa] font-medium uppercase tracking-wider">
-                Delivery Summary
-              </p>
-            </div>
             {[
+              { label: "Booking", value: bookingRef },
               { label: "From", value: pickup },
               { label: "To", value: destination },
-              {
-                label: "Package",
-                value: `${PACKAGE_SIZES.find((s) => s.value === packageSize)?.label}${description ? ` · ${description}` : ""}`,
-              },
-              {
-                label: "Vehicle",
-                value: `${VEHICLE_TYPES.find((v) => v.value === rider.vehicleType)?.icon} ${VEHICLE_TYPES.find((v) => v.value === rider.vehicleType)?.label}`,
-              },
-              { label: "Rider", value: rider.name },
-              { label: "Sender", value: `${senderName} · ${senderPhone}` },
+              { label: "Package", value: `${packageSize} · ${description}` },
               {
                 label: "Recipient",
                 value: `${recipientName} · ${recipientPhone}`,
               },
+              { label: "Fare", value: formatNGN(Number(fareAmount)) },
             ].map(({ label, value }) => (
               <div
                 key={label}
                 className="flex items-center justify-between px-5 py-2.5 gap-4"
               >
                 <p className="text-[12px] text-[#555] shrink-0">{label}</p>
-                <p className="text-[12px] text-[#e0e0e0] text-right truncate max-w-[60%]">
+                <p className="text-[12px] text-[#e0e0e0] font-medium text-right truncate max-w-[65%] capitalize">
                   {value}
                 </p>
               </div>
             ))}
           </div>
 
-          {/* Escrow notice */}
-          <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl">
-            <AlertTriangleIcon
-              size={13}
-              color="#f59e0b"
-              className="shrink-0 mt-0.5"
-            />
-            <p className="text-[11px] text-amber-400">
-              Payment is held in escrow by PandaEscrow and only released to the
-              rider once delivery is confirmed. Make sure the rider is available
-              before paying.
-            </p>
-          </div>
-
-          <div className="bg-[#1a1a1a] border border-[#222] rounded-2xl px-5 py-4 flex items-center justify-between">
-            <div>
-              <p className="text-[12px] text-[#555]">Total to pay</p>
-              <p className="text-[11px] text-[#444] mt-0.5">
-                Held in escrow · NGN
-              </p>
-            </div>
-            <p className="font-[var(--font-syne)] font-bold text-[24px] text-[#ff2d2d]">
-              {formatNGN(rider.priceEstimate!)}
-            </p>
-          </div>
-
-          <div className="flex items-center justify-center gap-2 py-1">
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#555"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect x="3" y="11" width="18" height="11" rx="2" />
-              <path d="M7 11V7a5 5 0 0110 0v4" />
-            </svg>
-            <span className="text-[11px] text-[#444]">
-              Secured by PandaEscrow · Card or bank transfer
-            </span>
-          </div>
-
-          <div className="flex gap-3">
-            <button
-              onClick={() => setStep("customer")}
-              className="flex-1 py-2.5 bg-transparent border border-[#222] text-[#666] rounded-xl text-[13px] cursor-pointer hover:border-[#333]"
-            >
-              ← Back
-            </button>
-            <button
-              onClick={handlePay}
-              disabled={loading}
-              className="flex-[2] py-3 bg-[#ff2d2d] text-white rounded-xl text-[14px] font-semibold font-[var(--font-syne)] border-none cursor-pointer hover:opacity-90 disabled:opacity-30"
-            >
-              {loading
-                ? "Processing..."
-                : `Pay ${formatNGN(rider.priceEstimate!)}`}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Step 5: Confirmed ────────────────────────────────────────────────── */}
-      {step === "confirmed" && (
-        <div className="flex flex-col items-center gap-5 py-6 text-center">
-          <div className="w-20 h-20 rounded-full bg-green-500/10 border-2 border-green-500/30 flex items-center justify-center">
-            <CheckCircleIcon size={36} color="#22c55e" />
-          </div>
-          <div>
-            <h2 className="font-[var(--font-syne)] font-bold text-xl text-[#f0f0f0] mb-1">
-              Delivery Booked!
-            </h2>
-            <p className="text-[13px] text-[#555]">
-              {rider?.name} will arrive at pickup shortly
-            </p>
-          </div>
-
-          {rider && (
-            <div className="w-full">
-              <ETADisplay
-                arrivalMinutes={rider.estimatedArrival}
-                deliveryMinutes={
-                  (rider.estimatedArrival ?? 10) + (rider.distanceAway ?? 5) * 3
-                }
-                type="delivery"
-                status="accepted"
-              />
-            </div>
-          )}
-
-          <div className="w-full bg-[#1a1a1a] border border-[#222] rounded-2xl divide-y divide-[#1e1e1e]">
-            <div className="flex items-center justify-between px-5 py-3.5">
-              <p className="text-[12px] text-[#555]">Booking Ref</p>
-              <p className="text-[13px] text-[#e0e0e0] font-mono font-semibold">
-                {bookingRef.slice(-8).toUpperCase()}
-              </p>
-            </div>
-            <div className="flex items-center justify-between px-5 py-3.5">
-              <p className="text-[12px] text-[#555]">Pickup OTP</p>
-              <p className="text-[18px] text-[#ff2d2d] font-bold font-mono tracking-widest">
-                {pickupOtp}
-              </p>
-            </div>
-            <div className="flex items-center justify-between px-5 py-3.5">
-              <p className="text-[12px] text-[#555]">Delivery OTP</p>
-              <p className="text-[18px] text-green-400 font-bold font-mono tracking-widest">
-                {deliveryOtp}
-              </p>
-            </div>
-            <div className="flex items-center justify-between px-5 py-3.5">
-              <p className="text-[12px] text-[#555]">Track via</p>
-              <p className="text-[12px] text-[#e0e0e0]">{senderPhone}</p>
-            </div>
-          </div>
-
-          <div className="w-full flex flex-col gap-2 text-left px-3 py-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
-            <div className="flex items-start gap-2">
-              <AlertTriangleIcon
-                size={13}
-                color="#f59e0b"
-                className="shrink-0 mt-0.5"
-              />
-              <p className="text-[11px] text-amber-400">
-                <strong>Pickup OTP ({pickupOtp})</strong> — give to rider when
-                they arrive
-              </p>
-            </div>
-            <div className="flex items-start gap-2">
-              <AlertTriangleIcon
-                size={13}
-                color="#f59e0b"
-                className="shrink-0 mt-0.5"
-              />
-              <p className="text-[11px] text-amber-400">
-                <strong>Delivery OTP ({deliveryOtp})</strong> — recipient gives
-                this to confirm receipt
-              </p>
-            </div>
-          </div>
-
-          <div className="w-full flex gap-3">
-            <button
-              onClick={() =>
-                (window.location.href = `/express/customer/track?ref=${bookingRef}`)
-              }
-              className="flex-1 py-2.5 bg-[#1a1a1a] border border-[#222] text-[#aaa] rounded-xl text-[13px] cursor-pointer hover:border-[#333]"
-            >
-              Track Delivery
-            </button>
-            <button
-              onClick={() =>
-                (window.location.href = `/chats?ref=${bookingRef}`)
-              }
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-transparent border border-[#2a2a2a] text-[#aaa] rounded-xl text-[12px] cursor-pointer hover:border-[#444] hover:text-[#e0e0e0]"
-            >
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
-              </svg>
-              Chat Rider
-            </button>
-            <button
-              onClick={handleCancel}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-transparent border border-red-500/30 text-red-400 rounded-xl text-[12px] cursor-pointer hover:bg-red-500/10"
-            >
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <line x1="15" y1="9" x2="9" y2="15" />
-                <line x1="9" y1="9" x2="15" y2="15" />
-              </svg>
-              Cancel
-            </button>
-          </div>
-
-          <p className="text-[10px] text-[#444] text-center">
-            Free cancellation before rider picks up. After pickup, partial
-            refund may apply.
-          </p>
-
-          <button
-            onClick={() => {
-              setStep("details");
-              setPickup("");
-              setDestination("");
-              setPackageSize("");
-              setSelectedVehicle("");
-              setSelectedRider(null);
-              setSenderName("");
-              setSenderPhone("");
-              setRecipientName("");
-              setRecipientPhone("");
+          <BankTransferPayment
+            bookingRef={bookingRef}
+            onPaid={() => setTimeout(() => goToTracking(bookingRef), 1500)}
+            onCancelled={() => {
+              setBookingRef("");
+              setStep("people");
             }}
-            className="px-6 py-2.5 bg-[#1a1a1a] border border-[#222] text-[#666] rounded-xl text-[13px] cursor-pointer hover:border-[#333]"
-          >
-            Send Another Package
-          </button>
+          />
         </div>
       )}
     </div>

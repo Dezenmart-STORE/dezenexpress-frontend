@@ -119,12 +119,6 @@ export default function RiderProfile() {
         payload.vehiclePlateNumber = form.vehiclePlateNumber;
       if (form.driverLicenseNumber !== (profile?.driverLicenseNumber ?? ""))
         payload.driverLicenseNumber = form.driverLicenseNumber;
-      if (form.bankName !== (profile?.bankName ?? ""))
-        payload.bankName = form.bankName;
-      if (form.bankAccountNumber !== (profile?.bankAccountNumber ?? ""))
-        payload.bankAccountNumber = form.bankAccountNumber;
-      if (form.bankAccountName !== (profile?.bankAccountName ?? ""))
-        payload.bankAccountName = form.bankAccountName;
       if (profileImageFile) payload.profileImage = profileImageFile;
 
       if (Object.keys(payload).length === 0) {
@@ -428,59 +422,30 @@ export default function RiderProfile() {
           </div>
 
           {/* Bank details */}
+          {/* Payout account — set from the Earnings screen (needs your password) */}
           <div className="bg-[#1a1a1a] border border-[#222] rounded-2xl p-5">
             <h3 className="font-[var(--font-syne)] font-semibold text-[14px] text-[#e0e0e0] mb-3">
-              Bank Details
+              Payout Account
             </h3>
-            <div className="flex flex-col gap-3">
-              <div>
-                <p className="text-[11px] text-[#555] uppercase tracking-wider mb-1.5">
-                  Bank Name
+            {profile?.payoutAccount ? (
+              <div className="flex flex-col gap-1">
+                <p className="text-[13px] text-[#e0e0e0]">
+                  {profile.payoutAccount.accountName}
                 </p>
-                <input
-                  value={form.bankName}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, bankName: e.target.value }))
-                  }
-                  disabled={!editing}
-                  className="w-full bg-[#111] border border-[#2e2e2e] rounded-lg px-3 py-2 text-[13px] text-[#e0e0e0] focus:border-[#ff2d2d] focus:outline-none disabled:opacity-60"
-                />
+                <p className="text-[12px] text-[#555]">
+                  {profile.payoutAccount.bankName} ·{" "}
+                  {profile.payoutAccount.accountNumberMasked}
+                </p>
+                <p className="text-[11px] text-green-400 mt-1">
+                  Withdrawals are paid here automatically.
+                </p>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <p className="text-[11px] text-[#555] uppercase tracking-wider mb-1.5">
-                    Account Number
-                  </p>
-                  <input
-                    value={form.bankAccountNumber}
-                    onChange={(e) =>
-                      setForm((p) => ({
-                        ...p,
-                        bankAccountNumber: e.target.value,
-                      }))
-                    }
-                    disabled={!editing}
-                    className="w-full bg-[#111] border border-[#2e2e2e] rounded-lg px-3 py-2 text-[13px] text-[#e0e0e0] focus:border-[#ff2d2d] focus:outline-none disabled:opacity-60"
-                  />
-                </div>
-                <div>
-                  <p className="text-[11px] text-[#555] uppercase tracking-wider mb-1.5">
-                    Account Name
-                  </p>
-                  <input
-                    value={form.bankAccountName}
-                    onChange={(e) =>
-                      setForm((p) => ({
-                        ...p,
-                        bankAccountName: e.target.value,
-                      }))
-                    }
-                    disabled={!editing}
-                    className="w-full bg-[#111] border border-[#2e2e2e] rounded-lg px-3 py-2 text-[13px] text-[#e0e0e0] focus:border-[#ff2d2d] focus:outline-none disabled:opacity-60"
-                  />
-                </div>
-              </div>
-            </div>
+            ) : (
+              <p className="text-[12px] text-[#555]">
+                No payout account set. Without one, withdrawals are paid by hand
+                by Dezenmart staff.
+              </p>
+            )}
           </div>
 
           {/* Not-yet-available notice — these fields were in the original

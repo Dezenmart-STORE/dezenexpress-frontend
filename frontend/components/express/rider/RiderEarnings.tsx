@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { riderApi, RiderWallet, RiderTransaction } from "@/lib/express/api";
+import PayoutSection from "./PayoutSection";
 import {
   DollarIcon,
   ClockIcon,
@@ -22,8 +23,6 @@ function formatDate(iso: string) {
   });
 }
 
-const RIDER_PERCENTAGE = 0.85;
-
 export default function RiderEarnings() {
   const [wallet, setWallet] = useState<RiderWallet | null>(null);
   const [transactions, setTransactions] = useState<RiderTransaction[]>([]);
@@ -35,6 +34,8 @@ export default function RiderEarnings() {
   const [wLoading, setWLoading] = useState(false);
   const [wError, setWError] = useState<string | null>(null);
   const [wDone, setWDone] = useState(false);
+  const [wMessage, setWMessage] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -45,7 +46,7 @@ export default function RiderEarnings() {
         riderApi.getTransactions(),
       ]);
       setWallet(walletRes.data);
-      setTransactions(txRes.data?.transactions ?? []);
+      setTransactions(txRes.data?.items ?? []);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load wallet");
     } finally {
@@ -60,13 +61,17 @@ export default function RiderEarnings() {
   const handleWithdraw = async () => {
     const amt = Number(amount);
     if (!amt || amt <= 0) return setWError("Enter a valid amount");
-    if (wallet && amt > wallet.available)
-      return setWError(`Max available: ₦${wallet.available.toLocaleString()}`);
+    if (amt < 1000) return setWError("Minimum withdrawal is ₦1,000");
+    if (wallet && amt > wallet.balance)
+      return setWError(`Max available: ₦${wallet.balance.toLocaleString()}`);
     setWLoading(true);
     setWError(null);
     try {
-      await riderApi.withdraw(amt);
+      const res = await riderApi.withdraw(amt);
+      // The server's message says whether it's automatic or waiting for staff.
+      setWMessage(res.data?.message ?? null);
       setWDone(true);
+      setRefreshKey((k) => k + 1); // reload the withdrawals list
       load(); // refresh balance
     } catch (err: unknown) {
       setWError(err instanceof Error ? err.message : "Withdrawal failed");
@@ -91,7 +96,7 @@ export default function RiderEarnings() {
           >
             <RefreshIcon size={14} color="#555" />
           </button>
-          {wallet && wallet.available > 0 && (
+          {wallet && wallet.balance > 0 && (
             <button
               onClick={() => setShowWithdraw(true)}
               className="flex items-center gap-1.5 px-4 py-2 bg-[#ff2d2d] text-white border-none rounded-xl text-[13px] font-semibold cursor-pointer hover:opacity-90"
@@ -118,29 +123,27 @@ export default function RiderEarnings() {
             <div className="w-32 h-9 bg-[#2a2a2a] rounded-lg animate-pulse mb-2" />
           ) : (
             <p className="font-[var(--font-syne)] font-bold text-3xl text-[#f0f0f0]">
-              ₦{(wallet?.available ?? 0).toLocaleString()}
+              ₦{(wallet?.balance ?? 0).toLocaleString()}
             </p>
           )}
           <div className="flex items-center gap-4 mt-4">
             <div>
-              <p className="text-[10px] text-[#555]">Pending</p>
+              <p className="text-[10px] text-[#555]">Withdrawn</p>
               <p className="text-[13px] font-semibold text-amber-400">
-                ₦{(wallet?.pending ?? 0).toLocaleString()}
+                ₦{(wallet?.totalWithdrawn ?? 0).toLocaleString()}
               </p>
             </div>
             <div className="w-px h-6 bg-[#2a2a2a]" />
             <div>
               <p className="text-[10px] text-[#555]">Total earned</p>
               <p className="text-[13px] font-semibold text-[#e0e0e0]">
-                ₦{(wallet?.total ?? 0).toLocaleString()}
+                ₦{(wallet?.totalEarned ?? 0).toLocaleString()}
               </p>
             </div>
             <div className="w-px h-6 bg-[#2a2a2a]" />
             <div>
-              <p className="text-[10px] text-[#555]">Your cut</p>
-              <p className="text-[13px] font-semibold text-green-400">
-                {RIDER_PERCENTAGE * 100}%
-              </p>
+              <p className="text-[10px] text-[#555]">Min. withdrawal</p>
+              <p className="text-[13px] font-semibold text-green-400">₦1,000</p>
             </div>
           </div>
         </div>
@@ -151,19 +154,19 @@ export default function RiderEarnings() {
         {[
           {
             label: "Total Earned",
-            value: `₦${(wallet?.total ?? 0).toLocaleString()}`,
+            value: `₦${(wallet?.totalEarned ?? 0).toLocaleString()}`,
             Icon: WalletIcon,
             color: "text-[#ff2d2d]",
           },
           {
             label: "Available",
-            value: `₦${(wallet?.available ?? 0).toLocaleString()}`,
+            value: `₦${(wallet?.balance ?? 0).toLocaleString()}`,
             Icon: CheckCircleIcon,
             color: "text-green-400",
           },
           {
-            label: "Pending",
-            value: `₦${(wallet?.pending ?? 0).toLocaleString()}`,
+            label: "Withdrawn",
+            value: `₦${(wallet?.totalWithdrawn ?? 0).toLocaleString()}`,
             Icon: ClockIcon,
             color: "text-amber-400",
           },
@@ -203,26 +206,7 @@ export default function RiderEarnings() {
         ))}
       </div>
 
-      {tab === "overview" && (
-        <div className="bg-[#1a1a1a] border border-[#222] rounded-2xl p-5">
-          <p className="text-[12px] font-semibold text-[#aaa] mb-3">
-            Earnings Split
-          </p>
-          <div className="flex items-center gap-2 mb-2">
-            <div className="flex-1 h-2 bg-[#111] rounded-full overflow-hidden">
-              <div
-                className="h-full bg-[#ff2d2d] rounded-full"
-                style={{ width: "85%" }}
-              />
-            </div>
-            <span className="text-[11px] text-[#aaa] shrink-0">85% / 15%</span>
-          </div>
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="text-[#ff2d2d]">● You (85%)</span>
-            <span className="text-[#555]">● Platform (15%)</span>
-          </div>
-        </div>
-      )}
+      {tab === "overview" && <PayoutSection refreshKey={refreshKey} />}
 
       {tab === "history" && (
         <div className="bg-[#1a1a1a] border border-[#222] rounded-2xl overflow-hidden">
@@ -243,35 +227,26 @@ export default function RiderEarnings() {
           ) : (
             <div className="divide-y divide-[#1e1e1e]">
               {transactions.map((t) => (
-                <div
-                  key={t._id}
-                  className="flex items-center gap-3 px-5 py-3.5"
-                >
+                <div key={t.id} className="flex items-center gap-3 px-5 py-3.5">
                   <div
                     className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0
-                    ${t.status === "settled" ? "bg-green-500/10" : t.status === "withdrawn" ? "bg-[#222]" : "bg-amber-500/10"}`}
+                    ${t.type === "credit" ? "bg-green-500/10" : "bg-[#222]"}`}
                   >
                     <TruckIcon
                       size={15}
-                      color={
-                        t.status === "settled"
-                          ? "#22c55e"
-                          : t.status === "withdrawn"
-                            ? "#666"
-                            : "#f59e0b"
-                      }
+                      color={t.type === "credit" ? "#22c55e" : "#666"}
                     />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-[13px] font-medium text-[#e0e0e0] truncate">
-                      {t.description}
+                      {t.description ?? t.reason.replace(/_/g, " ")}
                     </p>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span
                         className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full capitalize
-                        ${t.status === "settled" ? "bg-green-500/15 text-green-400" : t.status === "withdrawn" ? "bg-[#222] text-[#666]" : "bg-amber-500/15 text-amber-400"}`}
+                        ${t.type === "credit" ? "bg-green-500/15 text-green-400" : "bg-[#222] text-[#666]"}`}
                       >
-                        {t.status}
+                        {t.reason.replace(/_/g, " ")}
                       </span>
                       <span className="text-[11px] text-[#555]">
                         {formatDate(t.createdAt)}
@@ -305,6 +280,7 @@ export default function RiderEarnings() {
                 onClick={() => {
                   setShowWithdraw(false);
                   setWDone(false);
+                  setWMessage(null);
                   setAmount("");
                   setWError(null);
                 }}
@@ -323,8 +299,8 @@ export default function RiderEarnings() {
                     Request Submitted!
                   </p>
                   <p className="text-[12px] text-[#555]">
-                    ₦{Number(amount).toLocaleString()} will be sent to your
-                    registered bank account.
+                    {wMessage ??
+                      `Your withdrawal of ₦${Number(amount).toLocaleString()} was requested.`}
                   </p>
                   <button
                     onClick={() => {
@@ -344,7 +320,7 @@ export default function RiderEarnings() {
                     <p className="text-[12px] text-[#555]">
                       Available:{" "}
                       <strong className="text-[#e0e0e0]">
-                        ₦{(wallet?.available ?? 0).toLocaleString()}
+                        ₦{(wallet?.balance ?? 0).toLocaleString()}
                       </strong>
                     </p>
                   </div>
@@ -356,7 +332,7 @@ export default function RiderEarnings() {
                       type="number"
                       value={amount}
                       onChange={(e) => setAmount(e.target.value)}
-                      placeholder={`Max ₦${(wallet?.available ?? 0).toLocaleString()}`}
+                      placeholder={`Max ₦${(wallet?.balance ?? 0).toLocaleString()}`}
                       className="w-full bg-[#111] border border-[#2e2e2e] rounded-lg px-3 py-2.5 text-sm text-[#e0e0e0] focus:border-[#ff2d2d] focus:outline-none"
                     />
                   </div>

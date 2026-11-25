@@ -23,12 +23,6 @@ const QUICK_ACTIONS = [
     color: "bg-green-500/10 border-green-500/20",
   },
   {
-    icon: "💳",
-    label: "My Wallet",
-    href: "/express/customer/wallet",
-    color: "bg-purple-500/10 border-purple-500/20",
-  },
-  {
     icon: "🕐",
     label: "History",
     href: "/express/customer/history",
@@ -39,28 +33,28 @@ const QUICK_ACTIONS = [
 const HOW_IT_WORKS = [
   {
     step: "1",
-    title: "Choose service",
-    desc: "Book a ride or schedule a delivery",
+    title: "Book a ride or delivery",
+    desc: "Enter the route and your fare. For rides, pick an online rider",
   },
   {
     step: "2",
-    title: "Select a rider",
-    desc: "Pick from available verified riders near you",
+    title: "Your rider confirms",
+    desc: "Rides are sent to the rider you chose. If they decline, pick another",
   },
   {
     step: "3",
-    title: "Pay via PandaEscrow",
-    desc: "Funds held securely until service is complete",
+    title: "Pay by bank transfer",
+    desc: "Send the exact fare to a one-time account we give you",
   },
   {
     step: "4",
-    title: "Track in real time",
-    desc: "Follow your rider with live status updates",
+    title: "Track your trip",
+    desc: "Follow status updates as your rider moves",
   },
   {
     step: "5",
-    title: "Confirm with OTP",
-    desc: "Share OTP to release payment to rider",
+    title: "Share the completion code",
+    desc: "Give the 6-digit code to the rider at the end to finish the trip",
   },
 ];
 
@@ -78,7 +72,7 @@ export default function CustomerHome() {
           you can trust
         </h1>
         <p className="text-[13px] text-[#555] mt-2 mb-5 max-w-sm">
-          Secure escrow payments. Verified riders. Real-time tracking.
+          Pay by bank transfer. Verified riders. Live status updates.
         </p>
         <div className="flex gap-2 flex-wrap">
           <Link
@@ -101,7 +95,7 @@ export default function CustomerHome() {
         <p className="text-[11px] font-bold text-[#555] uppercase tracking-widest mb-3">
           Quick Actions
         </p>
-        <div className="grid grid-cols-5 gap-2">
+        <div className="grid grid-cols-4 gap-2">
           {QUICK_ACTIONS.map((a) => (
             <Link
               key={a.label}
@@ -146,12 +140,12 @@ export default function CustomerHome() {
         <span className="text-2xl shrink-0">🔒</span>
         <div>
           <p className="text-[13px] font-semibold text-[#e0e0e0] mb-1">
-            Payments secured by PandaEscrow
+            Pay by bank transfer
           </p>
           <p className="text-[12px] text-[#555]">
-            Your payment is held safely in escrow and only released to the rider
-            after you confirm delivery with an OTP. Refunds go straight back to
-            your wallet.
+            You pay the exact fare into a one-time bank account. Dezenmart holds
+            the money until the trip is complete, then pays the rider. If you
+            cancel a paid booking before a rider accepts, you are refunded.
           </p>
         </div>
       </div>
@@ -178,23 +172,6 @@ export default function CustomerHome() {
         </div>
       </div>
 
-      {/* Wallet promo */}
-      <Link
-        href="/express/customer/wallet"
-        className="flex items-center gap-4 p-4 bg-gradient-to-r from-purple-500/10 to-[#1a1a1a] border border-purple-500/20 rounded-2xl no-underline hover:border-purple-500/40 transition-colors"
-      >
-        <span className="text-3xl shrink-0">💳</span>
-        <div className="flex-1">
-          <p className="text-[13px] font-semibold text-[#e0e0e0]">
-            DezenExpress Wallet
-          </p>
-          <p className="text-[11px] text-[#555]">
-            Fund your wallet and pay faster for future bookings
-          </p>
-        </div>
-        <span className="text-[#555] text-[18px]">→</span>
-      </Link>
-
       {/* Rider CTA */}
       <Link
         href="/express/rider/auth"
@@ -206,7 +183,24 @@ export default function CustomerHome() {
             Become a DezenExpress Rider
           </p>
           <p className="text-[11px] text-[#555]">
-            Earn 85% of every fare. Set your own hours.
+            Earn on every trip and withdraw to your bank.
+          </p>
+        </div>
+        <span className="text-[#555] text-[18px]">→</span>
+      </Link>
+
+      {/* Logistics provider portal */}
+      <Link
+        href="/login"
+        className="flex items-center gap-4 p-4 bg-[#1a1a1a] border border-[#222] rounded-2xl no-underline hover:border-[#333] transition-colors"
+      >
+        <span className="text-3xl shrink-0">🚚</span>
+        <div className="flex-1">
+          <p className="text-[13px] font-semibold text-[#e0e0e0]">
+            Logistics provider?
+          </p>
+          <p className="text-[11px] text-[#555]">
+            Sign in to your provider dashboard
           </p>
         </div>
         <span className="text-[#555] text-[18px]">→</span>

@@ -4,11 +4,19 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { riderAuthApi, saveRiderToken } from "@/lib/express/api";
-import { VEHICLE_TYPES } from "@/lib/express/types";
 import { CheckCircleIcon, AlertTriangleIcon } from "@/components/Icons";
 
 type AuthMode = "login" | "otp";
-type RegisterStep = 1 | 2 | 3;
+type RegisterStep = 1 | 2;
+
+// The API accepts exactly these vehicle types.
+const RIDER_VEHICLES = [
+  { value: "bike", label: "Motorbike", icon: "🏍" },
+  { value: "bicycle", label: "Bicycle", icon: "🚲" },
+  { value: "car", label: "Car", icon: "🚗" },
+  { value: "van", label: "Van", icon: "🚐" },
+  { value: "truck", label: "Truck", icon: "🚛" },
+];
 
 function Label({ text, required }: { text: string; required?: boolean }) {
   return (
@@ -111,11 +119,6 @@ export default function RiderAuth() {
   const [vehiclePlate, setVehiclePlate] = useState("");
   const [licenseNumber, setLicenseNumber] = useState("");
 
-  // Register — Step 3: Bank
-  const [bankName, setBankName] = useState("");
-  const [bankAccountNumber, setBankAccountNumber] = useState("");
-  const [bankAccountName, setBankAccountName] = useState("");
-
   const clearError = () => setError(null);
 
   // ── Validate each step ────────────────────────────────────────────────────
@@ -137,20 +140,6 @@ export default function RiderAuth() {
     if (!vehicleType) return (setError("Select your vehicle type"), false);
     if (!vehiclePlate.trim())
       return (setError("Enter your vehicle plate number"), false);
-    if (!licenseNumber.trim())
-      return (setError("Enter your driver's license number"), false);
-    clearError();
-    return true;
-  };
-
-  const validateStep3 = () => {
-    if (!bankName.trim()) return (setError("Enter your bank name"), false);
-    if (!bankAccountNumber.trim())
-      return (setError("Enter your account number"), false);
-    if (bankAccountNumber.length < 10)
-      return (setError("Account number must be 10 digits"), false);
-    if (!bankAccountName.trim())
-      return (setError("Enter your account name"), false);
     clearError();
     return true;
   };
@@ -165,7 +154,7 @@ export default function RiderAuth() {
       await riderAuthApi.login(loginEmail.trim(), loginPassword);
       setOtpEmail(loginEmail.trim());
       setMode("otp");
-      setSuccess("OTP sent to your email");
+      setSuccess("A 6-digit code was sent to your email");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -175,7 +164,8 @@ export default function RiderAuth() {
 
   // ── OTP verify ───────────────────────────────────────────────────────────
   const handleVerifyOtp = async () => {
-    if (otp.trim().length < 4) return setError("Enter the OTP from your email");
+    if (otp.trim().length !== 6)
+      return setError("Enter the 6-digit code from your email");
     setLoading(true);
     clearError();
     try {
@@ -193,11 +183,10 @@ export default function RiderAuth() {
   // ── Register ─────────────────────────────────────────────────────────────
   const handleNextStep = () => {
     if (regStep === 1 && validateStep1()) setRegStep(2);
-    else if (regStep === 2 && validateStep2()) setRegStep(3);
   };
 
   const handleRegister = async () => {
-    if (!validateStep3()) return;
+    if (!validateStep2()) return;
     setLoading(true);
     clearError();
     try {
@@ -208,13 +197,10 @@ export default function RiderAuth() {
         password,
         vehicleType,
         vehiclePlateNumber: vehiclePlate.trim(),
-        driverLicenseNumber: licenseNumber.trim(),
-        bankName: bankName.trim(),
-        bankAccountNumber: bankAccountNumber.trim(),
-        bankAccountName: bankAccountName.trim(),
+        driverLicenseNumber: licenseNumber.trim() || undefined,
       });
       setSuccess(
-        "Registration submitted! Your account is pending verification (24–48 hrs). You'll be notified once approved.",
+        "Registration submitted! Your account is pending approval. You can accept requests once an admin verifies you.",
       );
       setTab("login");
       setRegStep(1);
@@ -225,11 +211,10 @@ export default function RiderAuth() {
     }
   };
 
-  const stepTitles = ["Personal Info", "Vehicle Info", "Bank Details"];
+  const stepTitles = ["Personal Info", "Vehicle Info"];
   const stepSubtitles = [
     "Tell us about yourself",
     "Details about your vehicle",
-    "Where we'll send your earnings",
   ];
 
   return (
@@ -355,7 +340,9 @@ export default function RiderAuth() {
                 Check your email
               </h2>
               <p className="text-[12px] text-[#555] mt-0.5">
-                OTP sent to <strong className="text-[#aaa]">{otpEmail}</strong>
+                We sent a 6-digit code to{" "}
+                <strong className="text-[#aaa]">{otpEmail}</strong>. It expires
+                after 5 minutes; if it has, go back and sign in again.
               </p>
             </div>
             <div>
@@ -371,7 +358,7 @@ export default function RiderAuth() {
             </div>
             <button
               onClick={handleVerifyOtp}
-              disabled={loading || otp.length < 4}
+              disabled={loading || otp.length !== 6}
               className="w-full py-3 bg-[#ff2d2d] text-white rounded-xl text-[14px] font-semibold font-[var(--font-syne)] border-none cursor-pointer hover:opacity-90 disabled:opacity-30"
             >
               {loading ? "Verifying..." : "Verify & Sign In"}
@@ -402,7 +389,7 @@ export default function RiderAuth() {
               </p>
             </div>
 
-            <StepIndicator current={regStep} total={3} />
+            <StepIndicator current={regStep} total={2} />
 
             {/* Step 1: Personal */}
             {regStep === 1 && (
@@ -474,7 +461,7 @@ export default function RiderAuth() {
                 <div>
                   <Label text="Vehicle Type" required />
                   <div className="grid grid-cols-3 gap-2">
-                    {VEHICLE_TYPES.map((v) => (
+                    {RIDER_VEHICLES.map((v) => (
                       <button
                         key={v.value}
                         onClick={() => setVehicleType(v.value)}
@@ -487,7 +474,6 @@ export default function RiderAuth() {
                         >
                           {v.label}
                         </p>
-                        <p className="text-[9px] text-[#444]">{v.maxKg}</p>
                       </button>
                     ))}
                   </div>
@@ -501,73 +487,13 @@ export default function RiderAuth() {
                   />
                 </div>
                 <div>
-                  <Label text="Driver's License Number" required />
+                  <Label text="Driver's License Number (optional)" />
                   <Field
                     value={licenseNumber}
                     onChange={setLicenseNumber}
                     placeholder="e.g. FRN-1234567890"
                   />
                 </div>
-                <div className="flex gap-3 pt-1">
-                  <button
-                    onClick={() => {
-                      setRegStep(1);
-                      clearError();
-                    }}
-                    className="flex-1 py-2.5 bg-transparent border border-[#222] text-[#666] rounded-xl text-[13px] cursor-pointer hover:border-[#333]"
-                  >
-                    ← Back
-                  </button>
-                  <button
-                    onClick={handleNextStep}
-                    className="flex-[2] py-2.5 bg-[#ff2d2d] text-white rounded-xl text-[13px] font-semibold font-[var(--font-syne)] border-none cursor-pointer hover:opacity-90"
-                  >
-                    Next: Bank Details →
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Step 3: Bank */}
-            {regStep === 3 && (
-              <div className="flex flex-col gap-4">
-                <div className="flex items-start gap-2 px-3 py-2.5 bg-[#111] border border-[#2a2a2a] rounded-xl">
-                  <AlertTriangleIcon
-                    size={13}
-                    color="#555"
-                    className="shrink-0 mt-0.5"
-                  />
-                  <p className="text-[11px] text-[#555]">
-                    Your earnings (85% of every fare) will be paid to this bank
-                    account.
-                  </p>
-                </div>
-                <div>
-                  <Label text="Bank Name" required />
-                  <Field
-                    value={bankName}
-                    onChange={setBankName}
-                    placeholder="e.g. First Bank"
-                  />
-                </div>
-                <div>
-                  <Label text="Account Number" required />
-                  <Field
-                    type="tel"
-                    value={bankAccountNumber}
-                    onChange={setBankAccountNumber}
-                    placeholder="0123456789"
-                  />
-                </div>
-                <div>
-                  <Label text="Account Name" required />
-                  <Field
-                    value={bankAccountName}
-                    onChange={setBankAccountName}
-                    placeholder="Name on account"
-                  />
-                </div>
-
                 <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl">
                   <AlertTriangleIcon
                     size={13}
@@ -575,15 +501,15 @@ export default function RiderAuth() {
                     className="shrink-0 mt-0.5"
                   />
                   <p className="text-[11px] text-amber-400">
-                    Your account will be reviewed before you can start accepting
-                    requests. This takes 24–48 hours.
+                    An admin reviews every new rider before they can accept
+                    requests. You'll add your payout bank account later from the
+                    Earnings screen.
                   </p>
                 </div>
-
                 <div className="flex gap-3 pt-1">
                   <button
                     onClick={() => {
-                      setRegStep(2);
+                      setRegStep(1);
                       clearError();
                     }}
                     className="flex-1 py-2.5 bg-transparent border border-[#222] text-[#666] rounded-xl text-[13px] cursor-pointer hover:border-[#333]"

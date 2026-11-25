@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { riderApi } from "@/lib/express/api";
+import Link from "next/link";
+import { riderApi, RiderRequest } from "@/lib/express/api";
 import {
   TruckIcon,
   PackageIcon,
-  ClockIcon,
   MapPinIcon,
   CheckCircleIcon,
   XIcon,
@@ -13,16 +13,22 @@ import {
   RefreshIcon,
 } from "@/components/Icons";
 
+const POLL_MS = 20000;
+
 function RequestCard({
   req,
   onAccept,
   onReject,
   loading,
+  acceptLabel = "Accept",
+  rejectLabel = "Reject",
 }: {
-  req: any;
+  req: RiderRequest;
   onAccept: () => void;
   onReject: () => void;
   loading: boolean;
+  acceptLabel?: string;
+  rejectLabel?: string;
 }) {
   return (
     <div className="bg-[#1a1a1a] border border-[#222] rounded-2xl overflow-hidden">
@@ -30,8 +36,7 @@ function RequestCard({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div
-              className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0
-              ${req.type === "ride" ? "bg-[#ff2d2d]/10" : "bg-blue-500/10"}`}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${req.type === "ride" ? "bg-[#ff2d2d]/10" : "bg-blue-500/10"}`}
             >
               {req.type === "ride" ? (
                 <TruckIcon size={16} color="#ff2d2d" />
@@ -41,16 +46,20 @@ function RequestCard({
             </div>
             <div>
               <p className="text-[13px] font-semibold text-[#e0e0e0] capitalize">
-                {req.type} Request
+                {req.type} request
               </p>
-              <p className="text-[11px] text-[#555]">from {req.customerName}</p>
+              <p className="text-[11px] text-[#555] font-mono">
+                {req.bookingRef}
+              </p>
             </div>
           </div>
           <div className="text-right">
             <p className="text-[16px] font-bold text-green-400 font-[var(--font-syne)]">
-              ₦{Math.round((req.fareAmount ?? 0) * 0.85).toLocaleString()}
+              ₦{(req.fareAmount ?? 0).toLocaleString()}
             </p>
-            <p className="text-[10px] text-[#555]">your 85%</p>
+            <p className="text-[10px] text-[#555]">
+              fare · you earn it minus the platform fee
+            </p>
           </div>
         </div>
 
@@ -70,15 +79,19 @@ function RequestCard({
         </div>
 
         <div className="flex items-center gap-4 text-[11px] text-[#555]">
-          {req.distanceKm && (
+          {req.distanceKm ? (
             <span className="flex items-center gap-1">
               <MapPinIcon size={11} color="#555" />
               {req.distanceKm} km
             </span>
+          ) : null}
+          {req.type === "ride" && (
+            <span className="capitalize">
+              {req.rideType ?? "standard"} · {req.passengerCount ?? 1} passenger
+              {(req.passengerCount ?? 1) !== 1 ? "s" : ""}
+            </span>
           )}
-          <span className="text-[#444]">
-            Total: ₦{(req.fareAmount ?? 0).toLocaleString()}
-          </span>
+          {req.customerName && <span>Customer: {req.customerName}</span>}
         </div>
 
         {req.package && (
@@ -90,8 +103,13 @@ function RequestCard({
             />
             <p className="text-[11px] text-blue-400">
               {req.package.sizeCategory} package · {req.package.description}
+              {req.package.weightKg ? ` · ${req.package.weightKg} kg` : ""}
             </p>
           </div>
+        )}
+
+        {req.notes && (
+          <p className="text-[11px] text-[#777]">Note: {req.notes}</p>
         )}
 
         <div className="flex gap-2 pt-1">
@@ -100,15 +118,15 @@ function RequestCard({
             disabled={loading}
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl text-[13px] font-semibold cursor-pointer hover:bg-red-500/20 transition-all disabled:opacity-40"
           >
-            <XIcon size={14} color="currentColor" /> Reject
+            <XIcon size={14} color="currentColor" /> {rejectLabel}
           </button>
           <button
             onClick={onAccept}
             disabled={loading}
             className="flex-[2] flex items-center justify-center gap-1.5 py-2.5 bg-[#ff2d2d] text-white border-none rounded-xl text-[13px] font-semibold cursor-pointer hover:opacity-90 transition-opacity disabled:opacity-40"
           >
-            <CheckCircleIcon size={14} color="white" /> Accept — ₦
-            {Math.round((req.fareAmount ?? 0) * 0.85).toLocaleString()}
+            <CheckCircleIcon size={14} color="white" />
+            {loading ? "Working…" : acceptLabel}
           </button>
         </div>
       </div>
@@ -117,50 +135,73 @@ function RequestCard({
 }
 
 export default function RiderRequests() {
-  const [requests, setRequests] = useState<any[]>([]);
+  const [rides, setRides] = useState<RiderRequest[]>([]);
+  const [deliveries, setDeliveries] = useState<RiderRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [actId, setActId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [showActiveLink, setShowActiveLink] = useState(false);
 
-  const load = useCallback(() => {
-    setLoading(true);
-    riderApi
-      .getRequests()
-      .then((res) => setRequests(res.data?.requests ?? []))
-      .catch((err) => setError(err.message))
+  const load = useCallback((silent = false) => {
+    if (!silent) setLoading(true);
+    // Load both lists independently so one failing doesn't hide the other.
+    Promise.allSettled([riderApi.getRideRequests(), riderApi.getRequests()])
+      .then(([rideRes, delRes]) => {
+        if (rideRes.status === "fulfilled") {
+          const d = rideRes.value.data;
+          setRides(d?.bookings ?? d?.requests ?? []);
+        }
+        if (delRes.status === "fulfilled") {
+          setDeliveries(delRes.value.data?.bookings ?? []);
+        }
+        if (!silent) {
+          const failed = [rideRes, delRes].find(
+            (r) => r.status === "rejected",
+          ) as PromiseRejectedResult | undefined;
+          setError(
+            failed
+              ? (failed.reason?.message ?? "Could not load requests")
+              : null,
+          );
+        }
+      })
       .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
     load();
+    const id = setInterval(() => load(true), POLL_MS);
+    return () => clearInterval(id);
   }, [load]);
 
-  const accept = async (id: string) => {
+  const run = async (
+    id: string,
+    action: () => Promise<unknown>,
+    after: () => void,
+    successNotice?: string,
+    activeLink = false,
+  ) => {
     setActId(id);
+    setError(null);
     try {
-      await riderApi.acceptRequest(id);
-      setRequests((prev) => prev.filter((r) => r._id !== id));
-      setSuccess("Request accepted! Head to pickup location.");
-      setTimeout(() => setSuccess(null), 3000);
+      await action();
+      after();
+      if (successNotice) {
+        setNotice(successNotice);
+        setShowActiveLink(activeLink);
+      }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to accept");
+      // 409 messages (no longer available, you're offline, you have another job…)
+      // are written to be shown as-is.
+      setError(err instanceof Error ? err.message : "That didn't work");
+      load(true);
     } finally {
       setActId(null);
     }
   };
 
-  const reject = async (id: string) => {
-    setActId(id);
-    try {
-      await riderApi.rejectRequest(id);
-      setRequests((prev) => prev.filter((r) => r._id !== id));
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to reject");
-    } finally {
-      setActId(null);
-    }
-  };
+  const total = rides.length + deliveries.length;
 
   return (
     <div className="flex-1 overflow-y-auto px-4 lg:px-7 py-4 lg:py-6 flex flex-col gap-5">
@@ -170,23 +211,16 @@ export default function RiderRequests() {
             Requests
           </h1>
           <p className="text-[12px] text-[#555]">
-            {requests.length} available near you
+            {total} request{total !== 1 ? "s" : ""} waiting for you
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/30 rounded-xl">
-            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-            <span className="text-[12px] text-green-400 font-medium">
-              Online
-            </span>
-          </div>
-          <button
-            onClick={load}
-            className="p-2 bg-[#1a1a1a] border border-[#222] rounded-xl cursor-pointer hover:border-[#333] text-[#555] hover:text-[#aaa]"
-          >
-            <RefreshIcon size={14} color="currentColor" />
-          </button>
-        </div>
+        <button
+          onClick={() => load()}
+          className="p-2 bg-[#1a1a1a] border border-[#222] rounded-xl cursor-pointer hover:border-[#333] text-[#555] hover:text-[#aaa]"
+          aria-label="Refresh"
+        >
+          <RefreshIcon size={14} color="currentColor" />
+        </button>
       </div>
 
       {error && (
@@ -204,10 +238,20 @@ export default function RiderRequests() {
         </div>
       )}
 
-      {success && (
-        <div className="flex items-center gap-2 px-3 py-2.5 bg-green-500/10 border border-green-500/30 rounded-xl text-[13px] text-green-400">
-          <CheckCircleIcon size={15} color="currentColor" />
-          {success}
+      {notice && (
+        <div className="flex items-center justify-between gap-2 px-3 py-2.5 bg-green-500/10 border border-green-500/30 rounded-xl text-[13px] text-green-400">
+          <span className="flex items-center gap-2">
+            <CheckCircleIcon size={15} color="currentColor" />
+            {notice}
+          </span>
+          {showActiveLink && (
+            <Link
+              href="/express/rider/active"
+              className="text-[12px] font-semibold text-green-300 no-underline hover:underline shrink-0"
+            >
+              Open →
+            </Link>
+          )}
         </div>
       )}
 
@@ -216,7 +260,7 @@ export default function RiderRequests() {
           <div className="w-8 h-8 border-2 border-[#ff2d2d] border-t-transparent rounded-full animate-spin" />
           <p className="text-[#555] text-sm">Loading requests...</p>
         </div>
-      ) : requests.length === 0 ? (
+      ) : total === 0 ? (
         <div className="flex flex-col items-center py-20 gap-4 text-[#555]">
           <div className="w-16 h-16 rounded-2xl bg-[#1a1a1a] border border-[#222] flex items-center justify-center">
             <PackageIcon size={28} color="#333" />
@@ -225,21 +269,94 @@ export default function RiderRequests() {
             No requests right now
           </p>
           <p className="text-[12px] text-center max-w-xs">
-            Stay online and new requests will appear here
+            Go online from your profile. Ride requests chosen for you and paid
+            delivery requests show up here automatically.
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-4">
-          {requests.map((req) => (
-            <RequestCard
-              key={req._id}
-              req={req}
-              onAccept={() => accept(req._id)}
-              onReject={() => reject(req._id)}
-              loading={actId === req._id}
-            />
-          ))}
-        </div>
+        <>
+          {rides.length > 0 && (
+            <section className="flex flex-col gap-3">
+              <div>
+                <h2 className="font-[var(--font-syne)] font-semibold text-[14px] text-[#e0e0e0]">
+                  Ride requests for you
+                </h2>
+                <p className="text-[11px] text-[#555]">
+                  A customer picked you. Confirm so they can pay. If you
+                  decline, they can choose another rider.
+                </p>
+              </div>
+              {rides.map((req) => (
+                <RequestCard
+                  key={req.id}
+                  req={req}
+                  loading={actId === req.id}
+                  acceptLabel="Confirm ride"
+                  rejectLabel="Decline"
+                  onAccept={() =>
+                    run(
+                      req.id,
+                      () => riderApi.confirmRideRequest(req.id),
+                      () =>
+                        setRides((prev) => prev.filter((r) => r.id !== req.id)),
+                      "Confirmed. The customer can pay now, and the ride shows up in your active jobs once they do.",
+                    )
+                  }
+                  onReject={() =>
+                    run(
+                      req.id,
+                      () => riderApi.rejectRideRequest(req.id),
+                      () =>
+                        setRides((prev) => prev.filter((r) => r.id !== req.id)),
+                    )
+                  }
+                />
+              ))}
+            </section>
+          )}
+
+          {deliveries.length > 0 && (
+            <section className="flex flex-col gap-3">
+              <div>
+                <h2 className="font-[var(--font-syne)] font-semibold text-[14px] text-[#e0e0e0]">
+                  Delivery requests
+                </h2>
+                <p className="text-[11px] text-[#555]">
+                  Paid deliveries open to every rider. First to accept gets it.
+                </p>
+              </div>
+              {deliveries.map((req) => (
+                <RequestCard
+                  key={req.id}
+                  req={req}
+                  loading={actId === req.id}
+                  onAccept={() =>
+                    run(
+                      req.id,
+                      () => riderApi.acceptRequest(req.id),
+                      () =>
+                        setDeliveries((prev) =>
+                          prev.filter((r) => r.id !== req.id),
+                        ),
+                      "Accepted! Customer details are now in your active jobs.",
+                      true,
+                    )
+                  }
+                  onReject={() =>
+                    run(
+                      req.id,
+                      () => riderApi.rejectRequest(req.id),
+                      () =>
+                        setDeliveries((prev) =>
+                          prev.filter((r) => r.id !== req.id),
+                        ),
+                    )
+                  }
+                />
+              ))}
+            </section>
+          )}
+        </>
       )}
     </div>
   );

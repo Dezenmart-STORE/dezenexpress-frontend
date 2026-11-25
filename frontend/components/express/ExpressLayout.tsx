@@ -4,6 +4,7 @@ import { useState, ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { clearCustomerToken } from "@/lib/express/customerAuth";
 
 import {
   HomeIcon,
@@ -14,21 +15,36 @@ import {
   ClockIcon,
   MapPinIcon,
   LogOutIcon,
+  ShieldIcon,
 } from "@/components/Icons";
 
-const CUSTOMER_NAV = [
+type NavItem = {
+  href: string;
+  label: string;
+  /** Shown in the mobile bottom bar, where there is room for about one word. */
+  shortLabel?: string;
+  Icon: React.FC<any>;
+};
+
+const CUSTOMER_NAV: NavItem[] = [
   { href: "/express/customer", label: "Home", Icon: HomeIcon },
-  { href: "/express/customer/book-ride", label: "Book Ride", Icon: TruckIcon },
+  {
+    href: "/express/customer/book-ride",
+    label: "Book Ride",
+    shortLabel: "Ride",
+    Icon: TruckIcon,
+  },
   {
     href: "/express/customer/book-delivery",
     label: "Pick Up and Delivery",
+    shortLabel: "Delivery",
     Icon: PackageIcon,
   },
   { href: "/express/customer/track", label: "Track", Icon: MapPinIcon },
   { href: "/express/customer/history", label: "History", Icon: ClockIcon },
 ];
 
-const RIDER_NAV = [
+const RIDER_NAV: NavItem[] = [
   { href: "/express/rider", label: "Dashboard", Icon: HomeIcon },
   { href: "/express/rider/requests", label: "Requests", Icon: PackageIcon },
   { href: "/express/rider/active", label: "Active", Icon: TruckIcon },
@@ -45,6 +61,7 @@ function NavLink({
 }: {
   href: string;
   label: string;
+  shortLabel?: string;
   Icon: React.FC<any>;
   collapsed: boolean;
   onNavigate?: () => void;
@@ -74,12 +91,12 @@ function NavLink({
   );
 }
 
-function MobileBottomNav({ nav }: { nav: typeof CUSTOMER_NAV }) {
+function MobileBottomNav({ nav }: { nav: NavItem[] }) {
   const pathname = usePathname();
   return (
-    <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#141414] border-t border-[#1e1e1e]">
-      <div className="flex items-center justify-around h-16 px-1">
-        {nav.slice(0, 5).map(({ href, label, Icon }) => {
+    <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#141414] border-t border-[#1e1e1e] pb-[env(safe-area-inset-bottom)]">
+      <div className="flex items-stretch justify-around h-16 px-1">
+        {nav.slice(0, 5).map(({ href, label, shortLabel, Icon }) => {
           const isIndex =
             href === "/express/customer" || href === "/express/rider";
           const active = isIndex
@@ -89,16 +106,18 @@ function MobileBottomNav({ nav }: { nav: typeof CUSTOMER_NAV }) {
             <Link
               key={href}
               href={href}
-              className="flex flex-col items-center justify-center gap-1 flex-1 h-full no-underline relative"
+              aria-label={label}
+              className="flex flex-col items-center justify-center gap-0.5 flex-1 min-w-0 no-underline"
             >
-              {active && (
-                <div className="absolute top-2 w-12 h-8 bg-[#ff2d2d]/10 rounded-xl" />
-              )}
-              <Icon size={20} color={active ? "#ff2d2d" : "#888"} />
               <span
-                className={`text-[10px] font-medium z-10 ${active ? "text-[#ff2d2d]" : "text-[#888]"}`}
+                className={`flex items-center justify-center w-12 h-7 rounded-xl transition-colors ${active ? "bg-[#ff2d2d]/10" : ""}`}
               >
-                {label}
+                <Icon size={20} color={active ? "#ff2d2d" : "#888"} />
+              </span>
+              <span
+                className={`block w-full px-0.5 text-center text-[10px] leading-none font-medium whitespace-nowrap overflow-hidden text-ellipsis ${active ? "text-[#ff2d2d]" : "text-[#888]"}`}
+              >
+                {shortLabel ?? label}
               </span>
             </Link>
           );
@@ -120,6 +139,11 @@ export default function ExpressLayout({ children }: { children: ReactNode }) {
     : "customer";
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const handleCustomerSignOut = () => {
+    clearCustomerToken();
+    // Full reload so the sign-in guard re-checks the (now missing) token.
+    window.location.href = "/express/customer";
+  };
   const nav = role === "customer" ? CUSTOMER_NAV : RIDER_NAV;
 
   return (
@@ -225,15 +249,33 @@ export default function ExpressLayout({ children }: { children: ReactNode }) {
             </a>
           )
         ) : collapsed ? (
-          <button className="flex items-center justify-center py-2.5 text-red-400 hover:bg-red-500/10 bg-transparent border-none cursor-pointer rounded-xl transition-all mt-2">
+          <button
+            onClick={handleCustomerSignOut}
+            className="flex items-center justify-center py-2.5 text-red-400 hover:bg-red-500/10 bg-transparent border-none cursor-pointer rounded-xl transition-all mt-2"
+          >
             <LogOutIcon size={16} color="currentColor" />
           </button>
         ) : (
-          <button className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] text-red-400 hover:bg-red-500/10 bg-transparent border-none cursor-pointer transition-all mt-2">
+          <button
+            onClick={handleCustomerSignOut}
+            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] text-red-400 hover:bg-red-500/10 bg-transparent border-none cursor-pointer transition-all mt-2"
+          >
             <LogOutIcon size={16} color="currentColor" />
             <span>Sign Out</span>
           </button>
         )}
+
+        {/* Logistics providers sign in here (the /login portal, then /dashboard) */}
+        <Link
+          href="/login"
+          title="Logistics provider login"
+          onClick={() => setMobileOpen(false)}
+          className={`flex items-center gap-2.5 rounded-xl text-[12px] text-[#555] hover:bg-white/5 hover:text-[#ccc] transition-all mt-1 no-underline
+            ${collapsed ? "justify-center py-2.5" : "px-3 py-2"}`}
+        >
+          <ShieldIcon size={15} color="currentColor" />
+          {!collapsed && <span>Logistics provider login</span>}
+        </Link>
       </aside>
 
       {/* Main content */}

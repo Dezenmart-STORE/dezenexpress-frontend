@@ -457,8 +457,8 @@ export default function AdminPage() {
   const [riders, setRiders] = useState<PendingRider[]>([]);
   const [ridersLoading, setRidersLoading] = useState(false);
   const [riderFilter, setRiderFilter] = useState<
-    "all" | "pending" | "approved" | "rejected"
-  >("all");
+    "pending" | "verified" | "rejected"
+  >("pending");
   const [riderSearch, setRiderSearch] = useState("");
   const [selectedRider, setSelectedRider] = useState<PendingRider | null>(null);
 
@@ -494,7 +494,7 @@ export default function AdminPage() {
   const loadRiders = useCallback(async () => {
     setRidersLoading(true);
     try {
-      const res = await adminRiderApi.getPending();
+      const res = await adminRiderApi.listRiders(riderFilter);
       const raw = res as any;
       const list: PendingRider[] = Array.isArray(raw?.data?.riders)
         ? raw.data.riders
@@ -504,42 +504,14 @@ export default function AdminPage() {
             ? raw
             : [];
       setRiders(list);
-    } catch {
-      // Fall back to mock if API not ready
-      setRiders([
-        {
-          _id: "r1",
-          name: "Emeka Obi",
-          email: "emeka@email.com",
-          phone: "08012345678",
-          vehicleType: "motorcycle",
-          vehiclePlateNumber: "LAG-234-KA",
-          driverLicenseNumber: "FRN-1234567890",
-          bankName: "First Bank",
-          bankAccountNumber: "3012345678",
-          bankAccountName: "Emeka Obi",
-          verificationStatus: "pending",
-          createdAt: new Date().toISOString(),
-        },
-        {
-          _id: "r2",
-          name: "Chioma Nwosu",
-          email: "chioma@email.com",
-          phone: "08098765432",
-          vehicleType: "bicycle",
-          vehiclePlateNumber: "N/A",
-          driverLicenseNumber: "FRN-9876543210",
-          bankName: "GTBank",
-          bankAccountNumber: "0123456789",
-          bankAccountName: "Chioma Nwosu",
-          verificationStatus: "pending",
-          createdAt: new Date(Date.now() - 86400000).toISOString(),
-        },
-      ]);
+    } catch (err: unknown) {
+      // No fake data: show why the list couldn't load (e.g. the account isn't an admin).
+      setRiders([]);
+      setError(err instanceof Error ? err.message : "Could not load riders");
     } finally {
       setRidersLoading(false);
     }
-  }, []);
+  }, [riderFilter]);
 
   // PATCH /express/rider/:id/verify { status: "verified" }
   const approveRider = async (id: string | undefined) => {
@@ -776,18 +748,16 @@ export default function AdminPage() {
           <div className="flex flex-col gap-4">
             {/* Filter */}
             <div className="flex gap-1 bg-[#1a1a1a] border border-[#222] rounded-xl p-1 w-fit">
-              {(["all", "pending", "approved", "rejected"] as const).map(
-                (f) => (
-                  <button
-                    key={f}
-                    onClick={() => setRiderFilter(f)}
-                    className={`px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all cursor-pointer border-none capitalize
+              {(["pending", "verified", "rejected"] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setRiderFilter(f)}
+                  className={`px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all cursor-pointer border-none capitalize
                     ${riderFilter === f ? "bg-[#ff2d2d] text-white" : "bg-transparent text-[#666] hover:text-[#ccc]"}`}
-                  >
-                    {f}
-                  </button>
-                ),
-              )}
+                >
+                  {f}
+                </button>
+              ))}
             </div>
 
             {/* Search */}
@@ -838,8 +808,8 @@ export default function AdminPage() {
                 {riders
                   .filter(
                     (r) =>
-                      riderFilter === "all" ||
-                      (r.verificationStatus ?? r.status) === riderFilter,
+                      (r.verificationStatus ?? r.status ?? "pending") ===
+                      riderFilter,
                   )
                   .filter((r) => {
                     const q = riderSearch.toLowerCase();
